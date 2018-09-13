@@ -1,0 +1,422 @@
+---
+title: "Labor Market Analysis"
+author: "Afsar Ali"
+date: "September 12, 2018"
+output:
+  prettydoc::html_pretty:
+    theme: Cayman
+    highlight: github
+    df_print: paged
+    toc: yes
+    toc_depth: '4'
+---
+
+###Executive Summary
+
+This is an Econometric Analysis of the Earnings Premiums for Educational Attainment by Gender of roughly 30,000 full-time workers using data from the 2011 American Community Survey (ACS) to find the answer for two questions:
+
+1. How do the earnings of full-time workers vary at different levels of educational attainment?
+2. How does the earnings premium for educational attainment vary by gender?
+
+
+### Code header 
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, paged.print=TRUE}
+# Course: ECON 5300
+# Title: Team Project on ACS Labor Market
+# Purpose: Data wrangling
+# Data: ACS Data for LMA Project-2.csv
+# Date: Jan 11, 2018
+# Author: Afsar Ali
+```
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, paged.print=TRUE}
+rm(list=ls(all=TRUE))  # Clear all data in environment
+
+# The tidyverse package contains ggplot2, tibble, tidyr, readr, purr, and dplyr among others
+library(tidyverse)
+# The gridExtra package contains grid.arrange function used to combine plots
+#library(gridExtra)
+library(GGally)
+#library(knitr)
+#library(htmlTable)
+#library(kableExtra)
+#library(stringr)
+# Package used for making interactive plots
+library(plotly)
+library(car)
+library(ggplot2)
+library(stargazer)
+library(car)
+library(olsrr)
+library(gvlma)
+library(MASS)
+#library(flexdashboard)
+
+# Load data 
+datd <- read.csv("ACS Data for LMA Project-2.csv", header = TRUE)
+
+#Wrangle data
+dat <-
+  datd %>%
+  filter(Earnings.Past.12.Months >= 10000) %>%
+  filter(Usual.Weekly.Hours >= 35) %>%
+  filter(Worked.40..Weeks.During.Past.12.Months == 1) %>%
+  filter(Biracial == 0) %>%
+  filter(Hawaiian.or.Pacific.Islander == 0) %>%
+  filter(Other.Race == 0) %>%
+  filter(American.Indian.or.Native.American == 0)
+
+#remove unwanted variables
+dat <-
+  dat[,-c(15, 18, 20, 21, 22, 25, 26)]
+
+#attach the file for use
+attach(dat)
+glimpse(dat)
+summary(dat)
+```
+
+### Data Summary Analysis
+
+- About 30,000 entries of the original 65,000 remain.
+- Median and mean age are close at 44 and 43 respectively, indicating that age might be somewhat normally distributed.
+- Median earnings is 41,000 while mean earnings is 55,000, indicating right skewness.
+- Median weekly hours worked is 40 while mean is almost 44, indicating some right skewness. Some people must be working very long weeks.
+```{r echo=TRUE, message=FALSE, warning=FALSE, paged.print=TRUE}
+# Create subset of the data
+white_male <-
+  dat %>%
+  filter(White==1) %>%
+  filter(Female==0)
+
+white_female <-
+  dat %>%
+  filter(White==1) %>%
+  filter(Female==1)
+
+nonwhite_male <-
+  dat %>%
+  filter(White==0) %>%
+  filter(Female==0)
+
+nonwhite_female <-
+  dat %>%
+  filter(White==0) %>%
+  filter(Female==1)
+
+#Order of highest average earner by groups:
+#White_male - 12336
+#Nonwhite_male - 4376
+#White_female - 9601
+#Nonwhite_female - 3836
+```
+
+### Histogram of some selected Variables 
+
+-Age: Doesn't look like there are Any outliers. 
+-Race: Mostly White
+-Education: Varies, Mostly High School. Maybe omit No High school as dummy variable
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, paged.print=TRUE}
+hist(Age)
+# Most common age is between 45 and 55.
+# Very few under 20.
+# Between 25 and 55 is fairly evenly represented.
+hist(Earnings.Past.12.Months, breaks = seq(0, 600000, by = 25000))
+# Highly right skewed.
+# Majority of occurrences are under 100,000.
+# Most common frequency is between 25,000 and 50000.
+# Highest earners are making 550,000.
+hist(Usual.Weekly.Hours, breaks = seq(35, 100, by = 1))
+# Highly right skewed.
+# Most common frequency is 40 hours.
+# Largest amount of hours worked in a week is 99.
+hist(Female) #Histogram of gender
+# There are more males than females in the data set, but not by a huge amount.
+hist(Married)#Histogram of married
+# There are much more married than unmarried in the data set.
+plot_ly(x = Race.Ethnicity,
+             type = "histogram")
+plot_ly(x = Educational.Attainment,
+             type = "histogram")
+
+```
+
+### Bar Plots of categorical data
+- Most common frequency is High School Degree.
+- Some college and Bachelor's degree also exhibit high frequency.
+- Least common is Doctorate, followed by Professional Degree.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, paged.print=TRUE}
+#Bar plot of educational attainment
+dat %>%
+  ggplot(aes(Educational.Attainment)) +
+  geom_bar() +
+  coord_flip()
+
+```
+
+- Most common frequency by far is white.
+- Hispanic, black, and Asian show some amount of common frequency.
+- All other races show too little data points to be useful. 
+- May want to filter out all ethnicity besides White, Hispanic, Black, and Asian if research question has to do with Race/Ethnicity.
+
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, paged.print=TRUE}
+#Bar plot of race/ethnicity
+dat %>%
+  ggplot(aes(Race.Ethnicity)) +
+  geom_bar() +
+  coord_flip()
+```
+
+### Descriptive Stats
+
+```{r results='asis', echo=TRUE, message=FALSE, warning=FALSE, paged.print=TRUE}
+stargazer(dat, type = "html", title="Descriptive statistics", digits=2)
+
+```
+
+### Model Analysis
+- With out Race, the model looks unchanged
+- Need to use log 
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, paged.print=TRUE}
+# ANOVA
+baseMod <- lm(Earnings.Past.12.Months ~ Age + Female + Married + Educational.Attainment + Race.Ethnicity, dat)
+mod1 <- lm(Earnings.Past.12.Months ~ Age + Female + Married + Educational.Attainment + Race.Ethnicity, dat)
+mod2 <- lm(Earnings.Past.12.Months ~ Age + Female + Married + Educational.Attainment + Race.Ethnicity, dat)
+mod3 <- lm(Earnings.Past.12.Months ~ Age + Female + Married + Educational.Attainment, dat)
+mod4 <- lm(Earnings.Past.12.Months ~ Age + Female + Married, dat)
+anova(baseMod, mod1, mod2, mod3, mod4)
+# summary(baseMod)
+# summary(mod1)
+# summary(mod2)
+# summary(mod3)
+# summary(mod4)
+par(mfrow=c(2,2)) # init 4 charts in 1 panel
+plot(baseMod)
+```
+
+
+
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, paged.print=TRUE}
+plot_ly(x = log(Earnings.Past.12.Months),
+             type = "histogram")
+#Create Age Squared to account for downward trend 
+dat$Age.Squared <- (dat$Age)^2 
+#looks much bettter 
+mod5 <- lm(log(Earnings.Past.12.Months) ~ Age + Age.Squared + Married + 
+               Black + Asian + Hispanic + High.School.Degree.or.GED +  Some.College + Associates.Degree +
+               Bachelors.Degree + Masters.Degree + Professional.Degree + Doctorate , data = dat)
+
+summary(mod5)
+par(mfrow=c(2,2)) # init 4 charts in 1 panel
+plot(mod5)
+#qplot(mod3, geom="histogram") doesnt work
+```
+### Model 5 testing 
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, paged.print=TRUE}
+##Breush Pagan Test
+
+lmtest::bptest(mod5)  # Breusch-Pagan test
+	#studentized Breusch-Pagan test
+
+#NCV Test
+
+car::ncvTest(mod5)  # Breusch-Pagan test
+
+```
+
+#### Heteroskedasticity Test
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, paged.print=TRUE}
+#Use independent variables of the model and perform multiple tests
+
+ols_test_f(mod5, rhs = TRUE, multiple = TRUE)
+```
+
+#### Outliers Test
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, paged.print=TRUE}
+# Assessing Outliers
+outlierTest(mod5) # Bonferonni p-value for most extreme obs
+qqPlot(mod5, main="QQ Plot") #qq plot for studentized resid 
+leveragePlots(mod5) # leverage plots
+```
+
+#### Influential Test
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, paged.print=TRUE}
+# Influential Observations
+# Cook's D plot
+# identify D values > 4/(n-k-1) 
+cutoff <- 4/((nrow(dat)-length(mod5$coefficients)-2)) 
+plot(mod5, which=4, cook.levels=cutoff)
+# Influence Plot 
+influencePlot(mod5,	id.method="identify", main="Influence Plot", sub="Circle size is proportial to Cook's Distance" )
+```
+#### Residuals Test
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, paged.print=TRUE}
+# Normality of Residuals
+# qq plot for studentized resid
+qqPlot(mod5, main="QQ Plot")
+# distribution of studentized residuals
+sresid <- studres(mod5) 
+hist(sresid, freq=FALSE, 
+   main="Distribution of Studentized Residuals")
+xfit<-seq(min(sresid),max(sresid),length=40) 
+yfit<-dnorm(xfit) 
+lines(xfit, yfit)
+```
+#### Homoscedasticity Test
+```{r echo=TRUE, message=FALSE, warning=FALSE, paged.print=TRUE}
+# Evaluate homoscedasticity
+# non-constant error variance test
+ncvTest(mod5)
+# plot studentized residuals vs. fitted values 
+spreadLevelPlot(mod5)
+```
+
+#### Collinearity Test
+```{r echo=TRUE, message=FALSE, warning=FALSE, paged.print=TRUE}
+# Evaluate Collinearity
+vif(mod5) # variance inflation factors 
+sqrt(vif(mod5)) > 2 # problem?
+```
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, paged.print=TRUE}
+
+# Evaluate Nonlinearity
+# component + residual plot 
+crPlots(mod5)
+# Ceres plots 
+#ceresPlots(mod5) #didnt work
+```
+
+#### Autocorrelated Test
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, paged.print=TRUE}
+# Test for Autocorrelated Errors
+durbinWatsonTest(mod5)
+```
+
+#### Global Model Test
+
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, paged.print=TRUE}
+# Global test of model assumptions
+#The gvlma( ) function in the gvlma package, performs a global validation of linear model assumptions as well separate evaluations of skewness, kurtosis, and heteroscedasticity.
+# Global test of model assumptions
+gvmodel <- gvlma(mod5) 
+summary(gvmodel)
+```
+
+### Test Other Models
+
+```{r, results='asis', echo=TRUE, message=FALSE, warning=FALSE, paged.print=TRUE}
+
+fit1 <- lm(log(Earnings.Past.12.Months) ~ Female + Age + Age.Squared, data=dat)
+fit2 <- lm(log(Earnings.Past.12.Months) ~ Female + Age + Age.Squared +  Married, data = dat)
+fit3 <- lm(log(Earnings.Past.12.Months) ~ Female + Age + Age.Squared + Married + White + 
+             Black + Asian + Hispanic, data = dat)
+fit4 <- lm(log(Earnings.Past.12.Months) ~ Female + Age + Age.Squared + Married + High.School.Degree.or.GED + 
+             Some.College + Associates.Degree + Bachelors.Degree + Masters.Degree +
+             Professional.Degree + Doctorate, data = dat)
+fit5 <- lm(log(Earnings.Past.12.Months) ~ Female + Age + Age.Squared + Married + High.School.Degree.or.GED + 
+             Some.College + Associates.Degree + Bachelors.Degree + Masters.Degree +
+             Professional.Degree + Doctorate + White + 
+             Black + Asian + Hispanic, data = dat)
+
+
+#summary(fit) # show results
+
+stargazer(fit1, fit2, fit3, fit4, fit5, align=T, type="html")
+
+```
+
+### Effect of Education on Earnings - Male VS Female
+
+```{r, results='asis', echo=TRUE, message=FALSE, warning=FALSE, paged.print=TRUE}
+data<- dat
+# data <-
+#   data0 %>%
+#     select(Earnings.Past.12.Months, Female, Age, Married, High.School.Degree.or.GED,
+#          Some.College, Associates.Degree, Bachelors.Degree, Masters.Degree,
+#          Professional.Degree, Doctorate, White, Black, Asian, Hispanic)
+data$Age.Squared <- (data$Age)^2 
+
+#2 tables male and female
+fit1 <- lm(log(Earnings.Past.12.Months) ~ Female + Age, data=data)
+fit2 <- lm(log(Earnings.Past.12.Months) ~ Female + Age + Married, data = data)
+fit3 <- lm(log(Earnings.Past.12.Months) ~ Female + Age + Married + High.School.Degree.or.GED
+           + Some.College + Associates.Degree + Bachelors.Degree + Masters.Degree +
+             Professional.Degree + Doctorate, data = data)
+fit4 <- lm(log(Earnings.Past.12.Months) ~ Female + Age + Married + White + 
+             Black + Asian + Hispanic, data = data)
+
+male <- subset(data, Earnings.Past.12.Months > 0 & Female == 0)
+female <- subset(data, Earnings.Past.12.Months > 0 & Female == 1)
+
+model1 <- lm(log(Earnings.Past.12.Months) ~ Age + Age.Squared + Married +
+               High.School.Degree.or.GED +  Some.College + Associates.Degree +
+               Bachelors.Degree + Masters.Degree + Professional.Degree + Doctorate +
+               Black + Asian + Hispanic, data = male)
+
+model2 <- lm(log(Earnings.Past.12.Months) ~ Age + Age.Squared + Married +
+               High.School.Degree.or.GED +  Some.College + Associates.Degree +
+               Bachelors.Degree + Masters.Degree + Professional.Degree + Doctorate +
+               Black + Asian + Hispanic, data = female)
+
+stargazer(model1, model2, type="html", title="Effect of Education on Earnings - Male VS Female")
+
+```
+
+### Robust standard errors test
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, paged.print=TRUE}
+
+#Conduct BPG Test
+library(lmtest)
+
+bptest(model1)
+bptestequation1 = lm(log(Earnings.Past.12.Months) ~ Age + Age.Squared + Married +
+               High.School.Degree.or.GED +  Some.College + Associates.Degree +
+               Bachelors.Degree + Masters.Degree + Professional.Degree + Doctorate +
+               Black + Asian + Hispanic, data = male)
+summary(bptestequation1) 
+
+bptest(model2)
+bptestequation2 = lm(log(Earnings.Past.12.Months) ~ Age + Age.Squared + Married +
+               High.School.Degree.or.GED +  Some.College + Associates.Degree +
+               Bachelors.Degree + Masters.Degree + Professional.Degree + Doctorate +
+               Black + Asian + Hispanic, data = female)
+summary(bptestequation2) 
+
+#Install the Sandwich Package (only need to do once)
+library(sandwich)
+
+#Generate the Variance Covariance Matrix of the Parameter Estimates
+vcovHC(model1, type = "HC")
+vcovHC(model2, type = "HC")#the diagonal elements are the variances of the parameter estimates
+
+#Generate the Robust standard errors and print them on screen 
+sandwich_se1 <- diag(vcovHC(model1, type = "HC"))^0.5
+sandwich_se1
+
+sandwich_se2 <- diag(vcovHC(model2, type = "HC"))^0.5
+sandwich_se2
+
+#Estimate Logarithmic Model with Age in Quadratic Form
+#LogEarnings.Equation = lm(log(Earnings.Past.12.Months, base = exp(1)) ~ Age + I(Age*Age) + Female 
+#                          + Asian + White + Hispanic + Black + High.School.Degree.or.GED + 
+#                            Some.College + Associates.Degree + Bachelors.Degree + Masters.Degree + 
+#                            Professional.Degree + Doctorate, data=employedwithpay)
+
+#summary(LogEarnings.Equation)
+```
+
