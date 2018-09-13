@@ -1,7 +1,6 @@
 ---
-title: "Labor Market Analysis"
+title: "Labor Market Analysis EDA"
 author: "Afsar Ali"
-date: "September 12, 2018"
 output:
   prettydoc::html_pretty:
     theme: Cayman
